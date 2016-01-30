@@ -8,7 +8,7 @@ void ConnectionProcess::start() {
 
     //while 1
         //hang on accept of the socket
-        //get conneciton info. send through pipe back to main process
+        //get connection info. send through pipe back to main process
 
         //while 1
             //hang on read in data from the socket
