@@ -4,6 +4,7 @@
 #include <string.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <unistd.h>
 
 using namespace std;
 
@@ -17,7 +18,7 @@ void connectToServer(string host, int port, int socketDescriptor){
         fprintf(stderr, "Unknown server address\n");
         exit(1);
     }else{
-        cout << "Hostname Resolved" << endl;
+        cout << "Main - Hostname Resolved" << endl;
     }
 
     struct	sockaddr_in server;
@@ -34,7 +35,7 @@ void connectToServer(string host, int port, int socketDescriptor){
         perror("connect");
         exit(1);
     }else{
-        cout << "Connection Established" << endl;
+        cout << "MAin - Connection Established" << endl;
     }
 }
 
@@ -45,14 +46,14 @@ void shutdownClient(int signo){
 int main() {
 
     //register sig terminate
-    /*struct sigaction act;
+    struct sigaction act;
     act.sa_handler = shutdownClient;
     act.sa_flags = 0;
     if ((sigemptyset (&act.sa_mask) == -1 || sigaction (SIGINT, &act, NULL) == -1))
     {
         perror ("Failed to set SIGINT handler");
         exit(1);
-    }*/
+    }
 
     //create socket
     int socketDescriptor;
@@ -61,33 +62,33 @@ int main() {
         perror ("Can't create a socket");
         exit(1);
     }else{
-        cout << "Socket Created" << endl;
+        cout << "Main - Socket Created" << endl;
     }
 
     //connect to server
-    connectToServer("localhost", 4001, socketDescriptor);
+    connectToServer("localhost", 4002, socketDescriptor);
 
 
     //while 1
-    //while(continueRunning){
+    while(continueRunning){
 
         //send message
         string message = "HELLO EVERYBODY";
         int length = message.size();
         send (socketDescriptor, message.c_str(), length, 0);
-        cout << "Sent Message" << endl;
+        cout << "Main - Sent Message" << endl;
 
         //wait for reply
         char recvBuffer[length];
-        recv(socketDescriptor, recvBuffer, length, 0);
+        recv(socketDescriptor, recvBuffer, length+1, 0);
 
-        cout << "Got Message Back!" << endl;
+        cout << "Main - Got Message Back!" << endl;
         cout << recvBuffer << endl;
 
 
-    //}
+    }
 
-
+    close(socketDescriptor);
 
 
     return 0;
