@@ -1,0 +1,16 @@
+//
+// Created by bensoer on 04/02/16.
+//
+
+#ifndef INC_8005_A2_SCALABLESERVERS_SHAREDDATAMANAGER_H
+#define INC_8005_A2_SCALABLESERVERS_SHAREDDATAMANAGER_H
+
+
+class SharedDataManager {
+public:
+
+
+};
+
+
+#endif //INC_8005_A2_SCALABLESERVERS_SHAREDDATAMANAGER_H

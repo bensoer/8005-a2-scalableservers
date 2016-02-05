@@ -4,7 +4,7 @@ project(8005_a2_scalableservers)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 set(E_SOURCE_FILES src/epoll/main.cpp)
-set(S_SOURCE_FILES src/select/main.cpp)
+set(S_SOURCE_FILES src/select/main.cpp src/select/ConnectionThreads.cpp src/select/ConnectionThreads.h src/select/SharedDataManager.cpp src/select/SharedDataManager.h src/select/ConnectionRecord.cpp src/select/ConnectionRecord.cpp src/select/ConnectionRecord.h src/select/Task.cpp src/select/Task.h)
 set(T_SOURCE_FILES src/traditional/main.cpp src/traditional/ConnectionProcess.cpp src/traditional/ConnectionProcess.h)
 set(C_SOURCE_FILES src/client/main.cpp)
 
