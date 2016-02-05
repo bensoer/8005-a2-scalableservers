@@ -112,7 +112,7 @@ int main() {
 
     cout << "Main - Setting Up SIGINT Listener" << endl;
 
-    /*   struct sigaction act;
+       struct sigaction act;
        act.sa_handler = shutdownServer;
        act.sa_flags = 0;
        if ((sigemptyset (&act.sa_mask) == -1 || sigaction (SIGINT, &act, NULL) == -1))
@@ -120,7 +120,7 @@ int main() {
            perror ("Failed to set SIGINT handler");
            exit(1);
        }
-   */
+
     cout << "Main - Creating Socket" << endl;
 
     //create a socket
@@ -175,7 +175,7 @@ int main() {
         cout << "Failed To Add Socket Descriptor To The Epoll Event Loop" << endl;
         exit(1);
     }else{
-        cout << "Successfully Added Socket Descriptor To The Epoll Event Loop" << endl;
+        cout << "Main - Successfully Added Socket Descriptor To The Epoll Event Loop" << endl;
     }
 
     cout << "Setting Up Pipe Communication" << endl;
@@ -255,7 +255,7 @@ int main() {
             string totalRequests = message.substr(secondSegregation + 1, (thirdSegregation-secondSegregation) - 1);
             string totalBytes = message.substr(thirdSegregation + 1, (endBracket-thirdSegregation) - 1 );
 
-            for_each(clientData.begin(), clientData.end(), [address,totalRequests,totalBytes](usage client){
+            for_each(clientData.begin(), clientData.end(), [address,totalRequests,totalBytes](usage &client){
                 //find the matching client
                 if(client.clientIP.compare(address)==0){
 

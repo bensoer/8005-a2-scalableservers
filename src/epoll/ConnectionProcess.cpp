@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <sys/epoll.h>
 #include <assert.h>
-#include <bits/fcntl-linux.h>
 #include <fcntl.h>
 
 
@@ -111,7 +110,7 @@ void ConnectionProcess::start() {
 
                 //send record information back to the main process
                 string address = inet_ntoa(client.sin_addr);
-                cout << "Connection Accepted On Server From Client: " << address << endl;
+                cout << getpid() << "Connection Accepted On Server From Client: " << address << endl;
                 // Pipe Message {N:<address>:<pid>}
                 string message = "{N:" + address + ":" + to_string(getpid()) + "}";
                 cout << getpid() << " - Sending Message Back: " << message << endl;
@@ -128,6 +127,7 @@ void ConnectionProcess::start() {
                 this->clientMetaList.push_back(newClient);
                 cout << "Client List Size: " << this->clientMetaList.size() << endl;
 
+                cout << getpid() << " Now Making New Connection Non Blocking" << endl;
                 // Make the fd_new non-blocking
                 if (fcntl(socketSessionDescriptor, F_SETFL, O_NONBLOCK | fcntl(socketSessionDescriptor, F_GETFL, 0)) ==
                     -1) {
@@ -140,44 +140,48 @@ void ConnectionProcess::start() {
                     cout << "Failed To Add Socket Descriptor To The Epoll Event Loop" << endl;
                     exit(1);
                 } else {
-                    cout << "Successfully Added Socket Descriptor To The Epoll Event Loop" << endl;
+                    cout << getpid() << " Successfully Added Socket Descriptor To The Epoll Event Loop" << endl;
                 }
+
+            //if its not a new connection then check it for data
+            }else{
+                //check for data to be read
+                string *message = this->readInMessage(events[i].data.fd);
+
+                //if nullptr means the client disconnected
+                if (message == nullptr) {
+                    cout << "Connection Process (" << getpid() << ") 0 BYTES READ, ASSUMING TERMINATION?" << endl;
+
+                    //send accounting information back to main process
+                    int currentClientSocketDescriptor = events[i].data.fd;
+                    for_each(this->clientMetaList.begin(), this->clientMetaList.end(),
+                             [currentClientSocketDescriptor, this](clientMeta client) {
+                                 if (client.socketDescriptor == currentClientSocketDescriptor) {
+
+                                     cout << "Found Matching Socket Record. To Send Termination Message For" << endl;
+
+                                     string terminationMessage =
+                                             "{T:" + client.address + ":" + to_string(client.requestCount) + ":" +
+                                             to_string(client.totalData) + "}";
+                                     cout << getpid() << " - Sending Termination Message: " << terminationMessage << endl;
+                                     write(this->pipeToParent[1], terminationMessage.c_str(), terminationMessage.length());
+                                 }
+                             });
+
+                    //then terminate and close the socket
+                    close(events[i].data.fd);
+
+                } else {
+                    //send back its content
+                    cout << getpid() << " Recieved Message >" << (*message) << "<" << endl;
+                    write(events[i].data.fd, message->c_str(), message->length());
+                }
+
+                //delete the dynamic message when were done with it
+                delete(message);
             }
 
-            //check for data to be read
-            string *message = this->readInMessage(events[i].data.fd);
 
-            //if nullptr means the client disconnected
-            if (message == nullptr) {
-                cout << "0 BYTES READ, ASSUMING TERMINATION?" << endl;
-
-                //send accounting information back to main process
-                int currentClientSocketDescriptor = events[i].data.fd;
-                for_each(this->clientMetaList.begin(), this->clientMetaList.end(),
-                         [currentClientSocketDescriptor, this](clientMeta client) {
-                             if (client.socketDescriptor == currentClientSocketDescriptor) {
-
-                                 cout << "Found Matching Socket Record. To Send Termination Message For" << endl;
-
-                                 string terminationMessage =
-                                         "{T:" + client.address + ":" + to_string(client.requestCount) + ":" +
-                                         to_string(client.totalData) + "}";
-                                 cout << getpid() << " - Sending Termination Message: " << terminationMessage << endl;
-                                 write(this->pipeToParent[1], terminationMessage.c_str(), terminationMessage.length());
-                             }
-                         });
-
-                //then terminate and close the socket
-                close(events[i].data.fd);
-
-            } else {
-                //send back its content
-                cout << getpid() << " Recieved Message >" << (*message) << "<" << endl;
-                write(this->clients[i], message->c_str(), message->length());
-            }
-
-            //delete the dynamic message when were done with it
-            delete(message);
 
 
         }
