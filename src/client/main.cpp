@@ -73,7 +73,7 @@ int main() {
     while(continueRunning){
 
         //send message
-        string message = "HELLO EVERYBODY";
+        string message = "{HELLO EVERYBODY}";
         int length = message.size();
         send (socketDescriptor, message.c_str(), length, 0);
         cout << "Main - Sent Message" << endl;

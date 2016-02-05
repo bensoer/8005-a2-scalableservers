@@ -18,12 +18,15 @@ string * ConnectionProcess:: readInMessage(int socketDescriptor){
 
     const int BUFFERSIZE = 2;
     string * totalMessage = new string("");
+    long totalBytes = 0;
 
     //cout << "going to read from pipe now" << endl;
 
     while(1){
         char inbuf[BUFFERSIZE];
         long bytesRead = read (socketDescriptor, inbuf, BUFFERSIZE-1);
+
+        totalBytes += bytesRead;
 
         if(bytesRead == 0){
             cout << "readMessage is Assuming The Client Has Terminated. Returning Null String" << endl;
@@ -41,10 +44,15 @@ string * ConnectionProcess:: readInMessage(int socketDescriptor){
             *totalMessage += segment;
 
 
-            for_each(this->clientMetaList.begin(), this->clientMetaList.end(), [socketDescriptor, bytesRead](clientMeta client){
+            //cout << "Found end of message. Now Accounting For It" << endl;
+            for_each(this->clientMetaList.begin(), this->clientMetaList.end(), [socketDescriptor, totalBytes](clientMeta &client){
                 if(client.socketDescriptor == socketDescriptor){
+                    //cout << "Found Matching Socket Descriptor Record" << endl;
+                    //cout << "Old Values: " << client.requestCount << ", " << client.totalData << endl;
                     client.requestCount++;
-                    client.totalData += bytesRead;
+                    client.totalData += totalBytes;
+
+                    //cout << "New Values: " << client.requestCount << ", " << client.totalData << endl;
                 }
             });
 
@@ -153,6 +161,7 @@ void ConnectionProcess::start() {
 
             //save the new descriptor for the now future session
             this->clientMetaList.push_back(newClient);
+            cout << "Client List Size: " << this->clientMetaList.size() << endl;
 
             //add new socketSessionDescriptor to set
             FD_SET(socketSessionDescriptor, &allset);
@@ -191,8 +200,11 @@ void ConnectionProcess::start() {
                     FD_CLR(this->clients[i], &allset);
 
                     int currentClientSocketDescriptor = this->clients[i];
+                    cout << "Client MEta List Length: " << this->clientMetaList.size();
                     for_each(this->clientMetaList.begin(), this->clientMetaList.end(), [currentClientSocketDescriptor, this](clientMeta client){
                         if(client.socketDescriptor == currentClientSocketDescriptor){
+
+                            cout << "Found Matching Socket Record. To Send Termination Message For" << endl;
 
                             string terminationMessage = "{T:" + client.address + ":" + to_string(client.requestCount) + ":" + to_string(client.totalData) + "}";
                             cout << getpid() << " - Sending Termination Message: " << terminationMessage << endl;
@@ -202,10 +214,14 @@ void ConnectionProcess::start() {
 
                     this->clients[i] = -1;
                 }else{
+
                     //send back its content
-                    cout << getpid() << " Recieved Message >" << message << "<" << endl;
+                    cout << getpid() << " Recieved Message >" << (*message) << "<" << endl;
                     write(this->clients[i], message->c_str(), message->length());
                 }
+
+                //delete the message reserve
+                delete(message);
 
                 //if there are no more to read, then lets stop now
                 nready = nready - 1;

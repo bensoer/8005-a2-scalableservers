@@ -105,7 +105,7 @@ int main() {
 
     cout << "Main - Setting Up SIGINT Listener" << endl;
 
- /*   struct sigaction act;
+    struct sigaction act;
     act.sa_handler = shutdownServer;
     act.sa_flags = 0;
     if ((sigemptyset (&act.sa_mask) == -1 || sigaction (SIGINT, &act, NULL) == -1))
@@ -113,7 +113,7 @@ int main() {
         perror ("Failed to set SIGINT handler");
         exit(1);
     }
-*/
+
     cout << "Main - Creating Socket" << endl;
 
     //create a socket

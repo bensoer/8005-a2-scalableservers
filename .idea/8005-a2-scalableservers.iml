@@ -10,6 +10,8 @@
       <sourceFolder url="file://$MODULE_DIR$/src/traditional/ConnectionProcess.h" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/traditional/ConnectionProcess.cpp" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/epoll/main.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/epoll/ConnectionProcess.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/epoll/ConnectionProcess.cpp" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/CMakeLists.txt" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/bin" />
     </content>

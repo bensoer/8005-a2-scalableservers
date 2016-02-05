@@ -17,6 +17,7 @@
 #include <signal.h>
 #include <vector>
 #include <algorithm>
+#include <sys/epoll.h>
 
 #include "ConnectionProcess.h"
 
@@ -26,6 +27,10 @@ bool continueRunning = true;
 int pipeConnectionToParent[2];
 vector<pid_t> children;
 const unsigned int INCR_NUM_OF_PROCESSES = 2;
+
+
+const unsigned int EPOLL_QUEUE_LENGTH = 10;
+const unsigned int TCP_QUEUE_LENGTH = 10;
 
 struct usage {
     string clientIP;
@@ -149,7 +154,8 @@ int main() {
     }
 
     //set socket to start listening
-    listen(socketDescriptor, 10);
+    listen(socketDescriptor, TCP_QUEUE_LENGTH);
+
 
     cout << "Setting Up Pipe Communication" << endl;
     //setup 1 way pipe - child2parent
@@ -199,16 +205,17 @@ int main() {
             clientData.push_back(record);
 
 
+            //TODO: Implement an algorithm to decide when to make more processes to manage/distribute connections
             //check if we have used half the processes
             //if the number of processes is less then half of the total processes. we need more
-            if(idleProcesses < (children.size()/2) ){
+           /* if(idleProcesses < (children.size()/2) ){
                 cout << "Main - Process Count Is Too Low. Adding More Processes" << endl;
                 //if half used create 10 more processes - pass ConnectionProcess the socket
                 createChildProcesses(socketDescriptor, pipeConnectionToParent, &children, INCR_NUM_OF_PROCESSES);
                 idleProcesses = idleProcesses + INCR_NUM_OF_PROCESSES;
             }else{
                 cout << "Main - Process Count Is Fine. idleProcesses: " << idleProcesses << " childrenSize: " << children.size() << endl;
-            }
+            }*/
 
         }
 
