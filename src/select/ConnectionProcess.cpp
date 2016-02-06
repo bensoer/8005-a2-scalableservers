@@ -46,7 +46,7 @@ string * ConnectionProcess:: readInMessage(int socketDescriptor){
 
             //cout << "Found end of message. Now Accounting For It" << endl;
             for_each(this->clientMetaList.begin(), this->clientMetaList.end(), [socketDescriptor, totalBytes](clientMeta &client){
-                if(client.socketDescriptor == socketDescriptor){
+                if(client.socketDescriptor == socketDescriptor && client.active){
                     //cout << "Found Matching Socket Descriptor Record" << endl;
                     //cout << "Old Values: " << client.requestCount << ", " << client.totalData << endl;
                     client.requestCount++;
@@ -77,11 +77,11 @@ void ConnectionProcess::start() {
         this->clients[i] = -1; //our setting to mean not in use
     }
 
+    //hang on accept of the socket
+    cout << getpid() << " - Now Hanging On Select" << endl;
 
     //while 1
     while(1){
-        //hang on accept of the socket
-        cout << getpid() << " - Now Hanging On Select" << endl;
 
         rset = allset;
         int nready = select(this->highestFileDescriptor + 1, &rset, NULL, NULL,NULL);
@@ -118,8 +118,9 @@ void ConnectionProcess::start() {
             string address = inet_ntoa(client.sin_addr);
             cout << "Connection Accepted On Server From Client: " << address << endl;
 
-            // Pipe Message {N:<address>:<pid>}
-            string message = "{N:" + address + ":" + to_string(getpid()) + "}";
+            // MESSAGE FORMAT {N:<address>:<handlingProcess>:<socketSessionDescriptor>}
+
+            string message = "{N:" + address + ":" + to_string(getpid()) + ":" + to_string(socketSessionDescriptor) + "}";
             cout << getpid() << " - Sending Message Back: " << message << endl;
             write(this->pipeToParent[1], message.c_str(), message.length());
 
@@ -129,6 +130,7 @@ void ConnectionProcess::start() {
             clientMeta newClient;
             newClient.socketDescriptor = socketSessionDescriptor;
             newClient.address = address;
+            newClient.handlingProcess = to_string(getpid());
 
             //inner scoping to avoid clashing. This should never fail or error
             {
@@ -202,13 +204,20 @@ void ConnectionProcess::start() {
                     int currentClientSocketDescriptor = this->clients[i];
                     cout << "Client MEta List Length: " << this->clientMetaList.size();
                     for_each(this->clientMetaList.begin(), this->clientMetaList.end(), [currentClientSocketDescriptor, this](clientMeta client){
-                        if(client.socketDescriptor == currentClientSocketDescriptor){
+                        if(client.socketDescriptor == currentClientSocketDescriptor && client.active){
 
                             cout << "Found Matching Socket Record. To Send Termination Message For" << endl;
 
-                            string terminationMessage = "{T:" + client.address + ":" + to_string(client.requestCount) + ":" + to_string(client.totalData) + "}";
+                            // MESSAGE FORMAT: {T:<handlingProcess>:<requestCount>:<totalData>:<socketSessionDescriptor>}
+
+                            string terminationMessage = "{T:" + client.handlingProcess + ":" + to_string(client.requestCount)
+                                                        + ":" + to_string(client.totalData) + ":"
+                                                        + to_string(client.socketDescriptor) + "}";
+
                             cout << getpid() << " - Sending Termination Message: " << terminationMessage << endl;
                             write(this->pipeToParent[1], terminationMessage.c_str(), terminationMessage.length());
+
+                            client.active = false;
                         }
                     });
 
@@ -216,7 +225,7 @@ void ConnectionProcess::start() {
                 }else{
 
                     //send back its content
-                    cout << getpid() << " Recieved Message >" << (*message) << "<" << endl;
+                    //cout << getpid() << " Recieved Message >" << (*message) << "<" << endl;
                     write(this->clients[i], message->c_str(), message->length());
                 }
 

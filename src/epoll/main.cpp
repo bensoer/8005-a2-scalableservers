@@ -9,15 +9,10 @@
 #include <unistd.h>
 #include <iostream>
 #include <netdb.h>
-
-#include <netinet/in.h>
-#include <string>
-#include <unistd.h>
-#include <bits/signum.h>
 #include <signal.h>
 #include <vector>
 #include <algorithm>
-#include <sys/epoll.h>
+#include <fstream>
 
 #include "ConnectionProcess.h"
 
@@ -30,24 +25,30 @@ const unsigned int INCR_NUM_OF_PROCESSES = 2;
 
 const unsigned int EPOLL_QUEUE_LENGTH = 10;
 const unsigned int TCP_QUEUE_LENGTH = 10;
+const unsigned int CONNECTIONS_PER_PROCESS = 25;
 
 struct usage {
     string clientIP;
     int totalPackets;
     long totalBytes;
     string handlingProcess;
+    int socketDescriptor;
+    bool active = true;
 };
 
 vector<usage> clientData;
 
+bool isChild = false;
 
-void createChildProcesses(int epollDescriptor, int socketDescriptor, int * pipeToParent, vector<pid_t> * children, unsigned int howMany){
+
+void createChildProcesses(int socketDescriptor, int * pipeToParent, vector<pid_t> * children, unsigned int howMany){
 
     pid_t pid;
     for(unsigned int i = 0 ; i < howMany; i++){
         if((pid = fork()) == 0){
 
-            ConnectionProcess * cp = new ConnectionProcess(epollDescriptor, socketDescriptor, pipeToParent, EPOLL_QUEUE_LENGTH);
+            isChild = true;
+            ConnectionProcess * cp = new ConnectionProcess(socketDescriptor, pipeToParent, EPOLL_QUEUE_LENGTH);
             cp->start();
 
             delete(cp);
@@ -60,6 +61,16 @@ void createChildProcesses(int epollDescriptor, int socketDescriptor, int * pipeT
     }
 }
 
+int getActiveConnectionsCount(){
+    int totalActive = 0;
+    for_each(clientData.begin(), clientData.end(), [&totalActive](usage client){
+        if(client.active){
+            totalActive++;
+        }
+    });
+    return totalActive;
+}
+
 string readInPipeMessage(int * pipeToParent){
 
     // Message Structure: { TYPE: DATA }
@@ -67,48 +78,51 @@ string readInPipeMessage(int * pipeToParent){
     const int BUFFERSIZE = 2;
     string totalMessage = "";
 
-    //cout << "going to read from pipe now" << endl;
-
     while(1){
         char inbuf[BUFFERSIZE];
         read (pipeToParent[0], inbuf, BUFFERSIZE-1);
 
-        //cout << "BUFFER CONTENT >" << inbuf << "<" << endl;
         inbuf[BUFFERSIZE-1] = '\0';
-
         string segment(inbuf);
-
-        //cout << segment << endl;
 
         if(segment.compare("}") == 0){
             totalMessage += segment;
             return totalMessage;
         }else{
-            //cout << "Not a }" << endl;
             totalMessage += segment;
         }
     }
 }
 
 void shutdownServer(int signo){
+
+    if(isChild){
+        return;
+    }
+
+    cout << " Main - Shutdown Triggered. Now Terminating Children" << endl;
     continueRunning = false;
 
     close(pipeConnectionToParent[0]);
     close(pipeConnectionToParent[1]);
 
     for_each(children.begin(),children.end(), [](pid_t pid){
-        kill(pid, SIGKILL);
+        cout << "Main - Killing: " << to_string(pid) << endl;
+        kill(pid, SIGTERM);
     });
 
+    cout << "Main - Done Killing" << endl;
+
     children.clear();
+
+    cout << "Main - Children List Cleared" << endl;
+
+    exit(0);
 }
 
 int main() {
 
-    int idleProcesses = -1;
-
-    struct epoll_event events[10];
-    struct epoll_event event;
+    int processCount = 0;
 
     cout << "Main - Setting Up SIGINT Listener" << endl;
 
@@ -117,7 +131,7 @@ int main() {
        act.sa_flags = 0;
        if ((sigemptyset (&act.sa_mask) == -1 || sigaction (SIGINT, &act, NULL) == -1))
        {
-           perror ("Failed to set SIGINT handler");
+           perror ("Main - Failed to set SIGINT handler");
            exit(1);
        }
 
@@ -138,7 +152,7 @@ int main() {
         exit(1);
     }
 
-    cout << "MAin - Binding Socket" << endl;
+    cout << "Main - Binding Socket" << endl;
 
     struct	sockaddr_in server;
     //bind the socket
@@ -159,28 +173,8 @@ int main() {
     listen(socketDescriptor, 10);
 
 
-    //create the epoll file descriptor
-    int epollDescriptor;
-    if((epollDescriptor = epoll_create(EPOLL_QUEUE_LENGTH)) < 0){
-        cout << "Failed To Create epoll Descriptor" << endl;
-        exit(1);
-    }else{
-        cout << "Successfully Created epoll Descriptor" << endl;
-    }
-
-    //add server socket to the epoll event loop
-    event.events = EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLET;
-    event.data.fd = socketDescriptor;
-    if(epoll_ctl(epollDescriptor, EPOLL_CTL_ADD, socketDescriptor, &event) == -1){
-        cout << "Failed To Add Socket Descriptor To The Epoll Event Loop" << endl;
-        exit(1);
-    }else{
-        cout << "Main - Successfully Added Socket Descriptor To The Epoll Event Loop" << endl;
-    }
-
-    cout << "Setting Up Pipe Communication" << endl;
+    cout << "Main - Setting Up Pipe Communication" << endl;
     //setup 1 way pipe - child2parent
-
     if(pipe(pipeConnectionToParent) < 0){
         cout << "Pipe Establishment To Parent Failed" << endl;
         exit(1);
@@ -188,11 +182,11 @@ int main() {
         cout << "Main - Pipe Establishment To Parent Successful" << endl;
     }
 
-    cout << "PreCreating 10 ConnectionProcesses" << endl;
+    cout << "Main - PreCreating " << INCR_NUM_OF_PROCESSES << " ConnectionProcesses" << endl;
     //pre-build 10 processes - pass ConnectionProcess the socket
-    createChildProcesses(epollDescriptor, socketDescriptor,pipeConnectionToParent, &children, INCR_NUM_OF_PROCESSES);
-    cout << "PreCreate. There Are : " << children.size() << " children" << endl;
-    idleProcesses = 2;
+    createChildProcesses(socketDescriptor,pipeConnectionToParent, &children, INCR_NUM_OF_PROCESSES);
+    cout << "Main - PreCreate. There Are : " << children.size() << " children" << endl;
+    processCount += INCR_NUM_OF_PROCESSES;
 
     cout << "Main - Entering Pipe Loop" << endl;
 
@@ -206,64 +200,77 @@ int main() {
         // get message about new connection details -> store those details
         string firstTwoLetters = message.substr(0, 2);
         if(firstTwoLetters.compare("{N")==0){
-            //store state that this process is in use
-            idleProcesses = idleProcesses - 1;
 
-            //{N:<address>:<pid>}
+            // MESSAGE FORMAT {N:<address>:<handlingProcess>:<socketSessionDescriptor>}
 
             //create a record for this client
             unsigned long firstSegregation = message.find(':');
             unsigned long secondSegregation = message.find(':', firstSegregation + 1);
-            unsigned long endBracket = message.find('}', secondSegregation + 1);
+            unsigned long thirdSegregation = message.find(':', secondSegregation + 1);
+            unsigned long endBracket = message.find('}', thirdSegregation + 1);
             string address = message.substr(firstSegregation + 1, (secondSegregation-firstSegregation) - 1 );
-            string strProcess = message.substr(secondSegregation + 1, (endBracket-secondSegregation) - 1);
+            string strProcess = message.substr(secondSegregation + 1, (thirdSegregation-secondSegregation) - 1);
+            int socketDescriptor = stoi(message.substr(thirdSegregation + 1, (endBracket-thirdSegregation) - 1));
             cout << "found address: >" << address << "<" << endl;
             cout << "found handling process: >" << strProcess << "<" << endl;
 
             usage record;
             record.clientIP = address;
             record.handlingProcess = strProcess;
+            record.socketDescriptor = socketDescriptor;
             clientData.push_back(record);
 
 
-            //TODO: Implement an algorithm to decide when to make more processes to manage/distribute connections
-            //check if we have used half the processes
-            //if the number of processes is less then half of the total processes. we need more
-            /* if(idleProcesses < (children.size()/2) ){
-                 cout << "Main - Process Count Is Too Low. Adding More Processes" << endl;
-                 //if half used create 10 more processes - pass ConnectionProcess the socket
-                 createChildProcesses(epollDescriptor, socketDescriptor, pipeConnectionToParent, &children, INCR_NUM_OF_PROCESSES);
-                 idleProcesses = idleProcesses + INCR_NUM_OF_PROCESSES;
-             }else{
-                 cout << "Main - Process Count Is Fine. idleProcesses: " << idleProcesses << " childrenSize: " << children.size() << endl;
-             }*/
-
+            //Implement an algorithm to decide when to make more processes to manage/distribute connections
+            //if there are more then 25 connections per process, create more processes
+            if((getActiveConnectionsCount() / CONNECTIONS_PER_PROCESS) > processCount ){
+                 cout << "Main - Process Count Ratio Is Too Low. Adding More Processes" << endl;
+                 createChildProcesses(socketDescriptor, pipeConnectionToParent, &children, INCR_NUM_OF_PROCESSES);
+                 processCount += INCR_NUM_OF_PROCESSES;
+             }
         }
 
         // get message about connection terminated and data summary -> store those details
         if(firstTwoLetters.compare("{T")==0){
 
-            //store state that this process is idle
-            idleProcesses = idleProcesses + 1;
 
+            // MESSAGE FORMAT: {T:<handlingProcess>:<requestCount>:<totalData>:<socketSessionDescriptor>}
             unsigned long firstSegregation = message.find(':');
             unsigned long secondSegregation = message.find(':', firstSegregation + 1);
             unsigned long thirdSegregation = message.find(':', secondSegregation + 1);
-            unsigned long endBracket = message.find('}', secondSegregation + 1);
+            unsigned long fourthSegregation = message.find(':', thirdSegregation + 1);
+            unsigned long endBracket = message.find('}', fourthSegregation + 1);
 
-            string address = message.substr(firstSegregation + 1, (secondSegregation-firstSegregation) - 1 );
+            string handlingProcess = message.substr(firstSegregation + 1, (secondSegregation-firstSegregation) - 1 );
             string totalRequests = message.substr(secondSegregation + 1, (thirdSegregation-secondSegregation) - 1);
-            string totalBytes = message.substr(thirdSegregation + 1, (endBracket-thirdSegregation) - 1 );
+            string totalBytes = message.substr(thirdSegregation + 1, (fourthSegregation-thirdSegregation) - 1 );
+            int socketDescriptor = stoi(message.substr(fourthSegregation + 1, (endBracket - fourthSegregation) - 1));
 
-            for_each(clientData.begin(), clientData.end(), [address,totalRequests,totalBytes](usage &client){
+            for_each(clientData.begin(), clientData.end(), [handlingProcess,totalRequests,totalBytes,socketDescriptor](usage &client){
                 //find the matching client
-                if(client.clientIP.compare(address)==0){
-
+                if(client.handlingProcess.compare(handlingProcess)==0 && client.socketDescriptor == socketDescriptor && client.active){
                     client.totalBytes = stoi(totalBytes);
                     client.totalPackets = stoi(totalRequests);
+                    client.active = false;
+
+
+                    //write the record to file
+                    string reportMessage = "Connection Record -  ClientIP: " + client.clientIP
+                                           + " SocketSessionDescriptor: " + to_string(client.socketDescriptor)
+                                           + " HandlingProcess: " + client.handlingProcess + " TotalPackets: "
+                                           + to_string(client.totalPackets) + " TotalBytes: "
+                                           + to_string(client.totalBytes);
+                    std::fstream fs;
+                    fs.open ("./epoll-syslog.log", std::fstream::in | std::fstream::out | std::fstream::app);
+
+                    fs << reportMessage << endl;
+
+                    fs.close();
 
                 }
             });
+
+
 
 
         }

@@ -3,7 +3,7 @@ project(8005_a2_scalableservers)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
-set(E_SOURCE_FILES src/epoll/main.cpp src/epoll/ConnectionProcess.h src/epoll/ConnectionProcess.cpp src/epoll/AcceptProcess.cpp src/epoll/AcceptProcess.h src/epoll/EchoProcess.cpp src/epoll/EchoProcess.h)
+set(E_SOURCE_FILES src/epoll/main.cpp src/epoll/ConnectionProcess.h src/epoll/ConnectionProcess.cpp)
 set(S_SOURCE_FILES src/select/main.cpp src/select/ConnectionProcess.cpp src/select/ConnectionProcess.h)
 set(T_SOURCE_FILES src/traditional/main.cpp src/traditional/ConnectionProcess.cpp src/traditional/ConnectionProcess.h)
 set(C_SOURCE_FILES src/client/main.cpp)

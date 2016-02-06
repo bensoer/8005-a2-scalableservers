@@ -20,6 +20,8 @@ struct clientMeta {
     long totalData = 0;
     string address = "";
     int socketDescriptor;
+    string handlingProcess;
+    bool active = true;
 };
 
 class ConnectionProcess {

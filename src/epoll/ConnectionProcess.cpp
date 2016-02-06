@@ -11,7 +11,7 @@
 #include <fcntl.h>
 
 
-string * ConnectionProcess:: readInMessage(int socketDescriptor){
+string * ConnectionProcess:: readInMessage(int incomingMessageDescriptor){
 
     // Message Structure: { <textfromclient> }
 
@@ -23,12 +23,12 @@ string * ConnectionProcess:: readInMessage(int socketDescriptor){
 
     while(1){
         char inbuf[BUFFERSIZE];
-        long bytesRead = read (socketDescriptor, inbuf, BUFFERSIZE-1);
+        long bytesRead = read (incomingMessageDescriptor, inbuf, BUFFERSIZE-1);
 
         totalBytes += bytesRead;
 
         if(bytesRead == 0){
-            cout << "readMessage is Assuming The Client Has Terminated. Returning Null String" << endl;
+            cout << getpid() << " - readMessage is Assuming The Client Has Terminated. Returning Null String" << endl;
             return nullptr ;
         }
 
@@ -44,8 +44,8 @@ string * ConnectionProcess:: readInMessage(int socketDescriptor){
 
             //account message into records
             for_each(this->clientMetaList.begin(), this->clientMetaList.end(),
-                 [socketDescriptor, totalBytes](clientMeta &client){
-                    if(client.socketDescriptor == socketDescriptor){
+                 [incomingMessageDescriptor, totalBytes](clientMeta &client){
+                    if(client.socketDescriptor == incomingMessageDescriptor && client.active){
                         //cout << "Found Matching Socket Descriptor Record" << endl;
                         //cout << "Old Values: " << client.requestCount << ", " << client.totalData << endl;
                         client.requestCount++;
@@ -68,14 +68,36 @@ void ConnectionProcess::start() {
     struct epoll_event events [this->EPOLL_QUEUE_LENGTH];
     struct epoll_event event; //holder for all new events
 
+
+    int epollDescriptor;
+    if((epollDescriptor = epoll_create(EPOLL_QUEUE_LENGTH)) < 0){
+        cout << getpid() << " Failed To Create epoll Descriptor" << endl;
+        exit(1);
+    }else{
+        cout << getpid() << " Successfully Created epoll Descriptor" << endl;
+    }
+
+    //add server socket to the epoll event loop
+    event.events = EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLET;
+    event.data.fd = this->socketDescriptor;
+    if(epoll_ctl(epollDescriptor, EPOLL_CTL_ADD, this->socketDescriptor, &event) == -1){
+        cout << getpid() << " Failed To Add Socket Descriptor To The Epoll Event Loop" << endl;
+        exit(1);
+    }else{
+        cout << getpid() << " - Successfully Added Socket Descriptor To The Epoll Event Loop" << endl;
+    }
+
+
+    cout << getpid() << " - Now Hanging On Epoll" << endl;
+
     //while 1
     while(1) {
-        //hang on accept of the socket
-        cout << getpid() << " - Now Hanging On Epoll" << endl;
+        //hang on the epoll_wait
 
-        int num_fds = epoll_wait(this->epollDescriptor, events, this->EPOLL_QUEUE_LENGTH, -1);
+        int num_fds = epoll_wait(epollDescriptor, events, this->EPOLL_QUEUE_LENGTH, -1);
         if (num_fds < 0) {
             cout << getpid() << " - There Was An Error In Epoll Wait" << endl;
+            exit(1);
         }
 
         for (unsigned int i = 0; i < num_fds; i++) {
@@ -83,7 +105,31 @@ void ConnectionProcess::start() {
             //check first for errors
             if (events[i].events & (EPOLLHUP | EPOLLERR)) {
                 cout << getpid() << " There Was An Error In An Event From Epoll. Closing File Descriptor" << endl;
+
+
+                //send back a termination message to main
+                //send accounting information back to main process
+                int currentClientSocketDescriptor = events[i].data.fd;
+                for_each(this->clientMetaList.begin(), this->clientMetaList.end(),
+                         [currentClientSocketDescriptor, this](clientMeta client) {
+                             if (client.socketDescriptor == currentClientSocketDescriptor && client.active) {
+
+                                 cout << "Found Matching Socket Record. To Send Termination Message For" << endl;
+
+                                 // MESSAGE FORMAT: {T:<handlingProcess>:<requestCount>:<totalData>:<socketSessionDescriptor>}
+
+                                 string terminationMessage =
+                                         "{T:" + client.handlingProcess + ":" + to_string(client.requestCount) + ":" +
+                                         to_string(client.totalData) + ":" + to_string(client.socketDescriptor) + "}";
+                                 cout << getpid() << " - Sending Termination Message: " << terminationMessage << endl;
+                                 write(this->pipeToParent[1], terminationMessage.c_str(), terminationMessage.length());
+
+                                 client.active = false;
+                             }
+                         });
+
                 close(events[i].data.fd);
+
                 continue;
             }
             if (!(events[i].events & EPOLLIN)) {
@@ -108,11 +154,13 @@ void ConnectionProcess::start() {
                     continue;
                 }
 
+                cout << getpid() << " SocketSessionDescriptor: " << socketSessionDescriptor << endl;
+
                 //send record information back to the main process
                 string address = inet_ntoa(client.sin_addr);
                 cout << getpid() << "Connection Accepted On Server From Client: " << address << endl;
-                // Pipe Message {N:<address>:<pid>}
-                string message = "{N:" + address + ":" + to_string(getpid()) + "}";
+                // MESSAGE FORMAT {N:<address>:<pid>:<socketSessionDescriptor>}
+                string message = "{N:" + address + ":" + to_string(getpid()) + ":" + to_string(socketSessionDescriptor) + "}";
                 cout << getpid() << " - Sending Message Back: " << message << endl;
                 write(this->pipeToParent[1], message.c_str(), message.length());
 
@@ -122,6 +170,7 @@ void ConnectionProcess::start() {
                 clientMeta newClient;
                 newClient.socketDescriptor = socketSessionDescriptor;
                 newClient.address = address;
+                newClient.handlingProcess = to_string(getpid());
 
                 //save the new descriptor for the now future session
                 this->clientMetaList.push_back(newClient);
@@ -156,15 +205,19 @@ void ConnectionProcess::start() {
                     int currentClientSocketDescriptor = events[i].data.fd;
                     for_each(this->clientMetaList.begin(), this->clientMetaList.end(),
                              [currentClientSocketDescriptor, this](clientMeta client) {
-                                 if (client.socketDescriptor == currentClientSocketDescriptor) {
+                                 if (client.socketDescriptor == currentClientSocketDescriptor && client.active) {
 
-                                     cout << "Found Matching Socket Record. To Send Termination Message For" << endl;
+                                     cout << getpid() << " Found Matching Socket Record. To Send Termination Message For" << endl;
+
+                                     // MESSAGE FORMAT: {T:<handlingProcess>:<requestCount>:<totalData>:<socketSessionDescriptor>}
 
                                      string terminationMessage =
-                                             "{T:" + client.address + ":" + to_string(client.requestCount) + ":" +
-                                             to_string(client.totalData) + "}";
+                                             "{T:" + client.handlingProcess + ":" + to_string(client.requestCount) + ":" +
+                                             to_string(client.totalData) + ":" + to_string(client.socketDescriptor) + "}";
                                      cout << getpid() << " - Sending Termination Message: " << terminationMessage << endl;
                                      write(this->pipeToParent[1], terminationMessage.c_str(), terminationMessage.length());
+
+                                     client.active = false;
                                  }
                              });
 
@@ -173,7 +226,7 @@ void ConnectionProcess::start() {
 
                 } else {
                     //send back its content
-                    cout << getpid() << " Recieved Message >" << (*message) << "<" << endl;
+                    //cout << getpid() << " Recieved Message >" << (*message) << "<" << endl;
                     write(events[i].data.fd, message->c_str(), message->length());
                 }
 

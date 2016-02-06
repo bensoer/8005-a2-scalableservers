@@ -20,21 +20,21 @@ struct clientMeta {
     long totalData = 0;
     string address = "";
     int socketDescriptor;
+    bool active = true;
+    string handlingProcess;
 };
 
 class ConnectionProcess {
 
 public:
     void start();
-    ConnectionProcess(int epollDescriptor, int socketDescriptor, int * pipeToParent, const int EPOLL_QUEUE_LENGTH): EPOLL_QUEUE_LENGTH(EPOLL_QUEUE_LENGTH){
-        this->epollDescriptor = epollDescriptor;
+    ConnectionProcess(int socketDescriptor, int * pipeToParent, const int EPOLL_QUEUE_LENGTH): EPOLL_QUEUE_LENGTH(EPOLL_QUEUE_LENGTH){
         this->pipeToParent = pipeToParent;
         this->socketDescriptor = socketDescriptor;
     };
 
 private:
     int socketDescriptor;
-    int epollDescriptor;
     int * pipeToParent;
 
     int clients[FD_SETSIZE];
