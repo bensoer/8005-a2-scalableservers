@@ -6,10 +6,13 @@
 #include <netdb.h>
 #include <unistd.h>
 #include "argparcer.h"
+#include <sys/epoll.h>
+#include <assert.h>
 
 using namespace std;
 
 bool continueRunning = true;
+const unsigned int EPOLL_QUEUE_LENGTH = 10;
 
 void connectToServer(string host, int port, int socketDescriptor){
     struct hostent	*hp;
@@ -96,6 +99,28 @@ int main(int argc, char * argv[]) {
     //connect to server
     connectToServer("localhost", 4002, socketDescriptor);
 
+    struct epoll_event events [EPOLL_QUEUE_LENGTH];
+    struct epoll_event event; //holder for all new events
+
+
+    int epollDescriptor;
+    if((epollDescriptor = epoll_create(EPOLL_QUEUE_LENGTH)) < 0){
+        cout << getpid() << " Failed To Create epoll Descriptor" << endl;
+        exit(1);
+    }else{
+        cout << getpid() << " Successfully Created epoll Descriptor" << endl;
+    }
+
+    //add server socket to the epoll event loop
+    event.events = EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLET;
+    event.data.fd = socketDescriptor;
+    if(epoll_ctl(epollDescriptor, EPOLL_CTL_ADD, socketDescriptor, &event) == -1){
+        cout << getpid() << " Failed To Add Socket Descriptor To The Epoll Event Loop" << endl;
+        exit(1);
+    }else{
+        cout << getpid() << " - Successfully Added Socket Descriptor To The Epoll Event Loop" << endl;
+    }
+
 
     //while 1
     while(continueRunning){
@@ -117,11 +142,38 @@ int main(int argc, char * argv[]) {
         cout << "Main - Sent Message" << endl;
 
         //wait for reply
-        char recvBuffer[length];
-        recv(socketDescriptor, recvBuffer, length+1, 0);
 
-        cout << "Main - Got Message Back!" << endl;
-        cout << recvBuffer << endl;
+        int num_fds = epoll_wait(epollDescriptor, events, EPOLL_QUEUE_LENGTH, -1);
+        if (num_fds < 0) {
+            cout << getpid() << " - There Was An Error In Epoll Wait" << endl;
+            exit(1);
+        }
+
+        for (unsigned int i = 0; i < num_fds; i++) {
+            if (events[i].events & (EPOLLHUP | EPOLLERR)) {
+                cout << getpid() << " There Was An Error In An Event From Epoll. Closing File Descriptor" << endl;
+                close(events[i].data.fd);
+                exit(1);
+            }
+
+            if (!(events[i].events & EPOLLIN)) {
+                cout << getpid() <<
+                " Critical Error. This Event Has Nothing To Read In and Has No Errors. Why Is It Here ?" << endl;
+                cout << getpid() << " Now Exploding" << endl;
+
+                assert (events[i].events & EPOLLIN);
+                exit(1);
+            }
+
+            char recvBuffer[length];
+            recv(events[i].data.fd, recvBuffer, length+1, 0);
+            cout << "Main - Got Message Back!" << endl;
+            cout << recvBuffer << endl;
+
+        }
+
+
+
 
 
     }
