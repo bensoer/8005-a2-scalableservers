@@ -14,6 +14,15 @@
 
 using namespace std;
 
+struct clientMeta {
+    int requestCount = 0;
+    long totalData = 0;
+    string handlingProcess;
+    int socketSessionDescriptor;
+    bool active = true;
+};
+
+
 class ConnectionProcess {
 
 public:
@@ -26,6 +35,10 @@ private:
     int * pipeToParent;
 
     struct  sockaddr_in client;
+
+    string * readInMessage(int socketDescriptor, clientMeta * clientInfo);
+
+
 };
 
 

@@ -17,6 +17,7 @@
 #include <signal.h>
 #include <vector>
 #include <algorithm>
+#include <fstream>
 
 #include "ConnectionProcess.h"
 
@@ -32,9 +33,12 @@ struct usage {
     int totalPackets;
     long totalBytes;
     string handlingProcess;
+    int socketDescriptor;
+    bool active = true;
 };
 
 vector<usage> clientData;
+bool isChild = false;
 
 
 void createChildProcesses(int socketDescriptor, int * pipeToParent, vector<pid_t> * children, unsigned int howMany){
@@ -43,6 +47,7 @@ void createChildProcesses(int socketDescriptor, int * pipeToParent, vector<pid_t
     for(unsigned int i = 0 ; i < howMany; i++){
         if((pid = fork()) == 0){
 
+            isChild = true;
             ConnectionProcess * cp = new ConnectionProcess(socketDescriptor, pipeToParent);
             cp->start();
 
@@ -87,16 +92,30 @@ string readInPipeMessage(int * pipeToParent){
 }
 
 void shutdownServer(int signo){
+
+    if(isChild){
+        return;
+    }
+
+    cout << "Shutdown Sigterm Detected . Terminating Program" << endl;
     continueRunning = false;
+
 
     close(pipeConnectionToParent[0]);
     close(pipeConnectionToParent[1]);
 
+    cout << "Killing Children" << endl;
     for_each(children.begin(),children.end(), [](pid_t pid){
-        kill(pid, SIGKILL);
+        cout << "Killing " << pid << endl;
+        kill(pid, SIGTERM);
     });
 
+    cout << "Children Killed. Clearing Children List" << endl;
+
     children.clear();
+
+    cout << "Self Terminating" << endl;
+    exit(0);
 }
 
 int main() {
@@ -131,7 +150,7 @@ int main() {
         exit(1);
     }
 
-    cout << "MAin - Binding Socket" << endl;
+    cout << "Main - Binding Socket" << endl;
 
     struct	sockaddr_in server;
     //bind the socket
@@ -183,24 +202,29 @@ int main() {
             idleProcesses = idleProcesses - 1;
 
             //{N:<address>:<pid>}
+            // MESSAGE FORMAT {N:<address>:<handlingProcess>:<socketSessionDescriptor>}
 
             //create a record for this client
             unsigned long firstSegregation = message.find(':');
             unsigned long secondSegregation = message.find(':', firstSegregation + 1);
-            unsigned long endBracket = message.find('}', secondSegregation + 1);
+            unsigned long thirdSegregation = message.find(':', secondSegregation + 1);
+            unsigned long endBracket = message.find('}', thirdSegregation + 1);
             string address = message.substr(firstSegregation + 1, (secondSegregation-firstSegregation) - 1 );
-            string strProcess = message.substr(secondSegregation + 1, (endBracket-secondSegregation) - 1);
+            string strProcess = message.substr(secondSegregation + 1, (thirdSegregation-secondSegregation) - 1);
+            int socketSessionDescriptor = stoi(message.substr(thirdSegregation + 1, (endBracket-thirdSegregation) - 1));
             cout << "found address: >" << address << "<" << endl;
             cout << "found handling process: >" << strProcess << "<" << endl;
+            cout << "found socketSessionDescriptor: >"<< socketSessionDescriptor << "<" << endl;
 
             usage record;
             record.clientIP = address;
             record.handlingProcess = strProcess;
+            record.socketDescriptor = socketSessionDescriptor;
             clientData.push_back(record);
 
 
             //check if we have used half the processes
-            //if the number of processes is less then half of the total processes. we need more
+            //if the number of idleProcesses is less then half of the current connections. we need more
             if(idleProcesses < (children.size()/2) ){
                 cout << "Main - Process Count Is Too Low. Adding More Processes" << endl;
                 //if half used create 10 more processes - pass ConnectionProcess the socket
@@ -215,24 +239,42 @@ int main() {
         // get message about connection terminated and data summary -> store those details
         if(firstTwoLetters.compare("{T")==0){
 
+            // MESSAGE FORMAT: {T:<handlingProcess>:<requestCount>:<totalData>:<socketSessionDescriptor>}
+
             //store state that this process is idle
             idleProcesses = idleProcesses + 1;
 
             unsigned long firstSegregation = message.find(':');
             unsigned long secondSegregation = message.find(':', firstSegregation + 1);
             unsigned long thirdSegregation = message.find(':', secondSegregation + 1);
+            unsigned long fourthSegregation = message.find(':', thirdSegregation + 1);
             unsigned long endBracket = message.find('}', secondSegregation + 1);
 
-            string address = message.substr(firstSegregation + 1, (secondSegregation-firstSegregation) - 1 );
+            string handlingProcess = message.substr(firstSegregation + 1, (secondSegregation-firstSegregation) - 1 );
             string totalRequests = message.substr(secondSegregation + 1, (thirdSegregation-secondSegregation) - 1);
-            string totalBytes = message.substr(thirdSegregation + 1, (endBracket-thirdSegregation) - 1 );
+            string totalBytes = message.substr(thirdSegregation + 1, (fourthSegregation-thirdSegregation) - 1 );
+            int socketSessionDescriptor = stoi(message.substr(fourthSegregation + 1, (endBracket-fourthSegregation) - 1));
 
-            for_each(clientData.begin(), clientData.end(), [address,totalRequests,totalBytes](usage client){
+            for_each(clientData.begin(), clientData.end(), [handlingProcess,totalRequests,totalBytes, socketSessionDescriptor](usage client){
                 //find the matching client
-                if(client.clientIP.compare(address)==0){
+                if(client.handlingProcess.compare(handlingProcess)==0 && client.socketDescriptor == socketSessionDescriptor && client.active){
 
                     client.totalBytes = stoi(totalBytes);
                     client.totalPackets = stoi(totalRequests);
+                    client.active = false;
+
+                    //write the record to file
+                    string reportMessage = "Connection Record -  ClientIP: " + client.clientIP
+                                           + " SocketSessionDescriptor: " + to_string(client.socketDescriptor)
+                                           + " HandlingProcess: " + client.handlingProcess + " TotalPackets: "
+                                           + to_string(client.totalPackets) + " TotalBytes: "
+                                           + to_string(client.totalBytes);
+                    std::fstream fs;
+                    fs.open ("./traditional-syslog.log", std::fstream::in | std::fstream::out | std::fstream::app);
+
+                    fs << reportMessage << endl;
+
+                    fs.close();
 
                 }
             });
