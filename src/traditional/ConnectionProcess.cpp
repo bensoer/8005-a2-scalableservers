@@ -103,6 +103,7 @@ void ConnectionProcess::start() {
             send (this->socketSessionDescriptor, message->c_str(), message->length() , 0);
 
             //cout << "Bout To Loop Around" << endl;
+            delete(message);
 
         }
 

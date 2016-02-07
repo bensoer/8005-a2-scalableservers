@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <unistd.h>
+#include "argparcer.h"
 
 using namespace std;
 
@@ -39,11 +40,38 @@ void connectToServer(string host, int port, int socketDescriptor){
     }
 }
 
+void gen_random(char *s, const int len) {
+    static const char alphanum[] =
+            "0123456789"
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    "abcdefghijklmnopqrstuvwxyz";
+
+    for (int i = 0; i < len; ++i) {
+        s[i] = alphanum[rand() % (sizeof(alphanum) - 1)];
+    }
+
+    s[len] = 0;
+}
+
 void shutdownClient(int signo){
     continueRunning = false;
 }
 
-int main() {
+int main(int argc, char * argv[]) {
+
+    ArgParcer parcer;
+    string messageToSend = parcer.GetTagData("-s",argv, argc);
+    int randomStrings = parcer.GetTagVal("-r", argv, argc);
+    bool sendRandom = false;
+
+    if(messageToSend.compare("-1")==0){
+        messageToSend = "HELLO EVERYBODY";
+    }
+
+    if(randomStrings == 1){
+        sendRandom = true;
+    }
+
 
     //register sig terminate
     struct sigaction act;
@@ -72,8 +100,18 @@ int main() {
     //while 1
     while(continueRunning){
 
+        string message;
+
+        if(sendRandom){
+            char chrMessage[25];
+            gen_random(chrMessage, 25);
+            message = "{" + to_string(*chrMessage) + "}";
+
+        }else{
+            message = "{" + messageToSend + "}";
+        }
+
         //send message
-        string message = "{HELLO EVERYBODY}";
         int length = message.size();
         send (socketDescriptor, message.c_str(), length, 0);
         cout << "Main - Sent Message" << endl;
