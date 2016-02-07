@@ -185,6 +185,7 @@ int main(int argc, char * argv[]) {
 
         request record;
         record.sendTime = initiationTime.tv_usec;
+        transactions.totalDataSent += sizeof(message.c_str());
 
         //send message
         int length = message.size();
@@ -228,7 +229,7 @@ int main(int argc, char * argv[]) {
             record.deltaTime = record.recieveTime - record.sendTime;
 
             transactions.requests.push_back(record);
-            transactions.totalDataSent += sizeof(message.c_str());
+
 
 
 
