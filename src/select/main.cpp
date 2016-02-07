@@ -29,8 +29,6 @@ int pipeConnectionToParent[2];
 vector<pid_t> children;
 const unsigned int INCR_NUM_OF_PROCESSES = 2;
 
-
-const unsigned int EPOLL_QUEUE_LENGTH = 10;
 const unsigned int TCP_QUEUE_LENGTH = 10;
 const unsigned int CONNECTIONS_PER_PROCESS = 25;
 

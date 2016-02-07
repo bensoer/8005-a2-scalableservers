@@ -37,11 +37,6 @@ private:
     int socketDescriptor;
     int * pipeToParent;
 
-    int clients[FD_SETSIZE];
-    int highestClientsIndex = -1;
-
-    int highestFileDescriptor;
-
     vector<clientMeta> clientMetaList;
 
     struct  sockaddr_in client;

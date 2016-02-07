@@ -8,11 +8,28 @@
 #include "argparcer.h"
 #include <sys/epoll.h>
 #include <assert.h>
+#include <sys/time.h>
+#include <vector>
+#include <fstream>
+#include <algorithm>
 
 using namespace std;
 
 bool continueRunning = true;
 const unsigned int EPOLL_QUEUE_LENGTH = 10;
+
+struct request {
+    long sendTime;
+    long recieveTime;
+    long deltaTime;
+};
+
+struct connection {
+    vector<request> requests;
+    long totalDataSent = 0;
+};
+
+connection transactions;
 
 void connectToServer(string host, int port, int socketDescriptor){
     struct hostent	*hp;
@@ -58,6 +75,31 @@ void gen_random(char *s, const int len) {
 
 void shutdownClient(int signo){
     continueRunning = false;
+
+
+    cout << " ..  Writing Client Records To File .. This May Take A Second .." << endl;
+
+    double totalTime = 0;
+
+    std::fstream fs;
+    fs.open ("./client-syslog.log", std::fstream::in | std::fstream::out | std::fstream::app);
+
+    for_each(transactions.requests.begin(), transactions.requests.end(), [&fs, &totalTime](request record){
+        fs << "Transaction Record - SendTime: " << record.sendTime << " microsec ReceiveTime: "
+            << record.recieveTime << " microsec Delta: " << record.deltaTime << " microsc" << endl;
+
+        totalTime += record.deltaTime;
+    });
+
+    fs << "Total Data Transfered: " << transactions.totalDataSent << " bytes" << endl;
+
+    double numOfRequests = transactions.requests.size();
+    double averageTime = totalTime/numOfRequests;
+
+    fs << "Average RTT: " << averageTime << endl;
+
+    fs.close();
+
 }
 
 int main(int argc, char * argv[]) {
@@ -122,6 +164,8 @@ int main(int argc, char * argv[]) {
     }
 
 
+
+
     //while 1
     while(continueRunning){
 
@@ -136,10 +180,17 @@ int main(int argc, char * argv[]) {
             message = "{" + messageToSend + "}";
         }
 
+        struct timeval initiationTime;
+        gettimeofday(&initiationTime,NULL);
+
+        request record;
+        record.sendTime = initiationTime.tv_usec;
+
         //send message
         int length = message.size();
         send (socketDescriptor, message.c_str(), length, 0);
         cout << "Main - Sent Message" << endl;
+
 
         //wait for reply
 
@@ -166,9 +217,20 @@ int main(int argc, char * argv[]) {
             }
 
             char recvBuffer[length];
-            recv(events[i].data.fd, recvBuffer, length+1, 0);
+            long bytesReceived = recv(events[i].data.fd, recvBuffer, length+1, 0);
             cout << "Main - Got Message Back!" << endl;
             cout << recvBuffer << endl;
+
+            struct timeval recieveTime;
+            gettimeofday(&recieveTime,NULL);
+
+            record.recieveTime = recieveTime.tv_usec;
+            record.deltaTime = record.recieveTime - record.sendTime;
+
+            transactions.requests.push_back(record);
+            transactions.totalDataSent += sizeof(message.c_str());
+
+
 
         }
 
