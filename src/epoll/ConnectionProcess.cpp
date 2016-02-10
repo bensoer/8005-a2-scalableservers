@@ -10,7 +10,15 @@
 #include <assert.h>
 #include <fcntl.h>
 
-
+/**
+ * readInMessage is a helper method that reads in a message from the passed in descriptor. Because all messages have a
+ * specific structure, the method reads in all of the data until it reaches the termination '}' character marking the
+ * end of the message. It then assembles the message before returning it. In the even a client terminates midway through
+ * this message, readInMessage can detect it by reading 0 bytes, at which poijt it returns a nullptr to signify a client
+ * termination.
+ * @param incomingMessageDescriptor:nt - The descriptor to read a message from
+ * @return *string - the assembled message or nullptr if the client terminates
+ */
 string * ConnectionProcess:: readInMessage(int incomingMessageDescriptor){
 
     // Message Structure: { <textfromclient> }
@@ -61,7 +69,15 @@ string * ConnectionProcess:: readInMessage(int incomingMessageDescriptor){
         }
     }
 }
-
+/**
+ * start is the main entrance method for a child process in the epoll server. starts main functionality is to setup
+ * epoll before then listening infinitely on it for new connections, errors or new data to read in. Upon reading in new
+ * data it it will echo the data back. Additionaly record information is stored about each transaction and every new
+ * connection. On a new connectiona new record is created and a message is sent back to the main process through the pipe
+ * to inform it of the new connection. When a client terminates, the record for that client is found and updated with all
+ * information about totalData and number of transfers it made. This information is then also sent back to the main process
+ * for its record keeping
+ */
 void ConnectionProcess::start() {
 
 

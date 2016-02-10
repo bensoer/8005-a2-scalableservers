@@ -11,7 +11,15 @@ ConnectionProcess::ConnectionProcess(int socketDescriptor, int *pipeToParent) {
     this->pipeToParent = pipeToParent;
 }
 
-
+/**
+ * readInMessage is a helper method that reads in a message from the passed in descriptor. Because all messages have a
+ * specific structure, the method reads in all of the data until it reaches the termination '}' character marking the
+ * end of the message. It then assembles the message before returning it. In the even a client terminates midway through
+ * this message, readInMessage can detect it by reading 0 bytes, at which poijt it returns a nullptr to signify a client
+ * termination.
+ * @param incomingMessageDescriptor:nt - The descriptor to read a message from
+ * @return *string - the assembled message or nullptr if the client terminates
+ */
 string * ConnectionProcess:: readInMessage(int socketDescriptor, clientMeta * clientInfo){
 
     // Message Structure: { <textfromclient> }
@@ -54,7 +62,15 @@ string * ConnectionProcess:: readInMessage(int socketDescriptor, clientMeta * cl
         }
     }
 }
-
+/**
+ * start is the main entrance point of the child listening process. starts functionality is mainly to hand on the
+ * accept call for a socket description. With the traditional server architecture, each connection gets its own process
+ * so each child process sits and hangs on accept and whomever is on the cpu at the time of a connection gets the connection.
+ * Upon a connection start creates a new record storing the new connection information and sends it back to the main
+ * process to update its records. When the connection terminates and completes, all record information is updated/added to
+ * and is sent back to the main process as well for its records. start then infinitely loops and thus loops around to hang
+ * on accept again for the next connection
+ */
 void ConnectionProcess::start() {
 
 

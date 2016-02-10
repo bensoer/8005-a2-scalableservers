@@ -32,6 +32,11 @@ const unsigned int INCR_NUM_OF_PROCESSES = 2;
 const unsigned int TCP_QUEUE_LENGTH = 10;
 const unsigned int CONNECTIONS_PER_PROCESS = 25;
 
+/**
+ * usage is a struct that represents a single connection between a single client. This is the main processes storage struct
+ * that keeps record of each connection, the amount of data passed, the amount of packets sent, client information, and
+ * state information as to whether the connection is still active
+ */
 struct usage {
     string clientIP;
     int totalPackets;
@@ -43,9 +48,24 @@ struct usage {
 
 bool isChild = false;
 
+/**
+ * clientData is a dynamic vector that stores a colleciton of all of the usage records during the servers execution
+ */
 vector<usage> clientData;
 
-
+/**
+ * createChildProcess is a helper method that creates child processes and locks them into only running within the scope
+ * of the start method of the ConnectionProcess object. This is to keep the code tidier in the main.cpp. If the start
+ * method returns, the ConnectionProcess object is deleted and the process exits. Additionaly when a child is made the
+ * isChild global variable is set to true. This is because the Ctrl+C event handler will have been copied over to the
+ * children. To avoid confusion all children do not terminate themselves (see shutdownServer method) and instead wait
+ * for a SIGTERM call from the parent. In the fork call, if the return is in the parent, the child pid is stored in the
+ * children vector for reference later and program termination.
+ * @param socketDescriptor:int - The socketDescriptor the child process will function with
+ * @param pipeToParent: *int - The pipe to communicate with the parent with
+ * @param children: *vector<pid_t> - The colleciton of children processes, to be added to by the parent when fork returns
+ * @param howMAny: unsigned int - How many children processes to make
+ */
 void createChildProcesses(int socketDescriptor, int * pipeToParent, vector<pid_t> * children, unsigned int howMany){
 
     pid_t pid;
@@ -66,6 +86,12 @@ void createChildProcesses(int socketDescriptor, int * pipeToParent, vector<pid_t
         }
     }
 }
+/**
+ * getActiveConnectionsCount is a helper method that searches through the clientData vector to count out how many active
+ * connections there are. This is used by the main to determine whether more processes are needed to maintain the connection
+ * to process ratio
+ * @return int - the number of active connections with the server
+ */
 int getActiveConnectionsCount(){
     int totalActive = 0;
     for_each(clientData.begin(), clientData.end(), [&totalActive](usage client){
@@ -75,7 +101,13 @@ int getActiveConnectionsCount(){
     });
     return totalActive;
 }
-
+/**
+ * readInPipeMessage is a helper method that reads in messages from the pipeToParent pipe. Data send through the pipe
+ * follows a very specific format and thus is read 1 byte at a time until the termination letter '}' is found. At this
+ * point the message is assembled and returned
+ * @param pipeToParent:*int - The pipe to be read from
+ * @return string - The assembled message from the pipe
+ */
 string readInPipeMessage(int * pipeToParent){
 
     // Message Structure: { TYPE: DATA }
@@ -105,7 +137,15 @@ string readInPipeMessage(int * pipeToParent){
         }
     }
 }
-
+/**
+ * shutdownServer is a helper method that handles the shutdown of ther server. This method is triggered when Ctrl+C is
+ * pressed. As this is the only way to shutdown the server, this method ensures all portions of the server are cleaned
+ * up before self terminating the main process. Since both parent and child processes inherit this functionality, shutdownServer
+ * ensures that all child processes to not self terminate. Instead it enforces that the parent process goes through its
+ * list of children process and issues a SIGTERM to each of them. As part of the cleanup shutdownServer also closes all
+ * pipe connections before self terminating the main process
+ * @param signo:int - The signal number (not used)
+ */
 void shutdownServer(int signo){
 
     if(isChild){
@@ -126,7 +166,14 @@ void shutdownServer(int signo){
 
     exit(0);
 }
-
+/**
+ * main is the main entrance point of the program. It sets up all portions of the server. Including setting up the Ctrl+C
+ * handler, setting up the socket and pipes between children, prebuilding the child processes and then waiting on the pipe
+ * for messages. The main task of the main method after setting all portions up is recording status connections so that
+ * they can be written to file when the server is finaly terminated. It does this by using its helper methods to read
+ * from the pipe and parse out the necessary information depending on what type of message it is. Records are then updated/added
+ * and during new connections, additional checks for the ratio of processes to connections is checked
+ */
 int main() {
 
     int processCount = 0;

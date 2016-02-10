@@ -18,12 +18,19 @@ using namespace std;
 bool continueRunning = true;
 const unsigned int EPOLL_QUEUE_LENGTH = 10;
 
+/*
+ * request is a struct used to represent a request made from the client to the server. It stores the sendTime, recieveTime
+ * and time difference between the two times
+ */
 struct request {
     long sendTime;
     long recieveTime;
     long deltaTime;
 };
-
+/**
+ * connection is a struct that is used to represent a connection from a client to a server. It stores the request
+ * structures that it has made to the server aswell as a record of the total amount of data it has sent
+ */
 struct connection {
     vector<request> requests;
     long totalDataSent = 0;
@@ -31,6 +38,13 @@ struct connection {
 
 connection transactions;
 
+/**
+ * connectToServer is a helper method that establishes a connection to the passed in host on the passed in port using
+ * the passed in socketDescriptor.
+ * @param host:String - The host to connect to. This will be DNS resolved to its IP
+ * @param port:int - The port number of the host to connect to
+ * @param socketDescriptor:int - The socket descriptor to make the connnection through
+ */
 void connectToServer(string host, int port, int socketDescriptor){
     struct hostent	*hp;
 
@@ -60,6 +74,12 @@ void connectToServer(string host, int port, int socketDescriptor){
     }
 }
 
+/**
+ * gen_random is a helper method to generate random text messages when sending random messages to the server. The method
+ * will fill the passed in char pointer to the length passed in
+ * @param s:char * - The string to be filled with random letters as a message
+ * @param len:int - The length of the string to be filled with random letters as a message
+ */
 void gen_random(char *s, const int len) {
     static const char alphanum[] =
             "0123456789"
@@ -72,7 +92,12 @@ void gen_random(char *s, const int len) {
 
     s[len] = 0;
 }
-
+/**
+ * shutdownClient is a helper method that enabled the client to shutdown appropriatly when Ctrl+C is called. Since this
+ * is the only way to shutdown the client, when this method is triggered it will write all of the gathered record results
+ * to file so that it can be further examined. It then self terminates the client
+ * @param signo:int - The signal number (not used)
+ */
 void shutdownClient(int signo){
     continueRunning = false;
 
@@ -101,7 +126,16 @@ void shutdownClient(int signo){
     fs.close();
 
 }
-
+/**
+ * the main entrance point of the client. It first grabs a number of optional parameters to determine what to send. It then
+ * sets up handlers for Ctrl+c, followed by setting up the socket, connecting to the server, setting up epoll to listen
+ * for responses, and then cycling through sending the message, listening for a response, and sending the message again
+ * upon reciept
+ * @param argc:int - the number of parameters in the *argv[] parameter
+ * @param argv:char*[] - An array of pointers to chars representing the passed in parameters set at initialization of
+ * the program
+ * @return int - Value as to whether the program has executed successfully. 0 for success 1 for failure
+ */
 int main(int argc, char * argv[]) {
 
     ArgParcer parcer;
@@ -164,8 +198,6 @@ int main(int argc, char * argv[]) {
     }
 
 
-
-
     //while 1
     while(continueRunning){
 
@@ -201,6 +233,7 @@ int main(int argc, char * argv[]) {
             exit(1);
         }
 
+        //sift through reply
         for (unsigned int i = 0; i < num_fds; i++) {
             if (events[i].events & (EPOLLHUP | EPOLLERR)) {
                 cout << getpid() << " There Was An Error In An Event From Epoll. Closing File Descriptor" << endl;
@@ -225,6 +258,8 @@ int main(int argc, char * argv[]) {
             struct timeval recieveTime;
             gettimeofday(&recieveTime,NULL);
 
+
+            //write down record information about reply
             record.recieveTime = recieveTime.tv_usec;
             record.deltaTime = record.recieveTime - record.sendTime;
 
