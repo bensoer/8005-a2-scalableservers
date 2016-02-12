@@ -2,13 +2,14 @@
 <module type="CPP_MODULE" version="4">
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/src/traditional/main.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/traditional/ConnectionProcess.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/traditional/ConnectionProcess.cpp" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/client/main.cpp" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/select/main.cpp" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/select/ConnectionProcess.h" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/select/ConnectionProcess.cpp" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/src/traditional/main.cpp" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/src/traditional/ConnectionProcess.h" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/src/traditional/ConnectionProcess.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/client2/main.cpp" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/epoll/main.cpp" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/epoll/ConnectionProcess.h" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/epoll/ConnectionProcess.cpp" isTestSource="false" />

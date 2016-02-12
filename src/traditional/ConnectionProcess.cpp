@@ -115,6 +115,7 @@ void ConnectionProcess::start() {
             }
 
             //cout << "Sending It Back" << endl;
+            //cout << getpid() << " Recieved Message >" << (*message) << "<" << endl;
             //echo the data back
             send (this->socketSessionDescriptor, message->c_str(), message->length() , 0);
 

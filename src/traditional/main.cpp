@@ -162,6 +162,7 @@ void shutdownServer(int signo){
 int main() {
 
     int idleProcesses = -1;
+    int processCount = 0;
 
     cout << "Main - Setting Up SIGINT Listener" << endl;
 
@@ -225,7 +226,8 @@ int main() {
     //pre-build 10 processes - pass ConnectionProcess the socket
     createChildProcesses(socketDescriptor,pipeConnectionToParent, &children, INCR_NUM_OF_PROCESSES);
     cout << "PreCreate. There Are : " << children.size() << " children" << endl;
-    idleProcesses = 2;
+    idleProcesses = INCR_NUM_OF_PROCESSES;
+    processCount += INCR_NUM_OF_PROCESSES;
 
     cout << "Main - Entering Pipe Loop" << endl;
 
@@ -271,6 +273,10 @@ int main() {
                 //if half used create 10 more processes - pass ConnectionProcess the socket
                 createChildProcesses(socketDescriptor, pipeConnectionToParent, &children, INCR_NUM_OF_PROCESSES);
                 idleProcesses = idleProcesses + INCR_NUM_OF_PROCESSES;
+                processCount += INCR_NUM_OF_PROCESSES;
+
+                cout << "Main - Process Count Is At: " << processCount << endl;
+                cout << "Main - Idle Process Count Is At: " << idleProcesses << endl;
             }else{
                 cout << "Main - Process Count Is Fine. idleProcesses: " << idleProcesses << " childrenSize: " << children.size() << endl;
             }

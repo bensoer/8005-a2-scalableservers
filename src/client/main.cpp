@@ -12,11 +12,14 @@
 #include <vector>
 #include <fstream>
 #include <algorithm>
+#include <fcntl.h>
 
 using namespace std;
 
 bool continueRunning = true;
 const unsigned int EPOLL_QUEUE_LENGTH = 10;
+int * descriptors;
+int connections;
 
 /*
  * request is a struct used to represent a request made from the client to the server. It stores the sendTime, recieveTime
@@ -34,9 +37,11 @@ struct request {
 struct connection {
     vector<request> requests;
     long totalDataSent = 0;
+    int descriptor;
 };
 
-connection transactions;
+
+vector<connection> connectionsVector;
 
 /**
  * connectToServer is a helper method that establishes a connection to the passed in host on the passed in port using
@@ -105,25 +110,50 @@ void shutdownClient(int signo){
     cout << " ..  Writing Client Records To File .. This May Take A Second .." << endl;
 
     double totalTime = 0;
+    double totalData = 0;
 
     std::fstream fs;
     fs.open ("./client-syslog.log", std::fstream::in | std::fstream::out | std::fstream::app);
 
-    for_each(transactions.requests.begin(), transactions.requests.end(), [&fs, &totalTime](request record){
-        fs << "Transaction Record - SendTime: " << record.sendTime << " microsec ReceiveTime: "
+    int index = 0;
+    for_each(connectionsVector.begin(), connectionsVector.end(), [&fs, &totalTime, &totalData, &index](connection connection){
+
+        int totalTimeOfConnection = 0;
+
+        fs << " -- Connection " << index << " Made Over Socket Descriptor: " << connection.descriptor << " -- " << endl;
+        fs << " -- Total Data Sent Over This Connection: " << connection.totalDataSent << " bytes -- " << endl;
+        index++;
+
+        totalData += connection.totalDataSent;
+
+        for_each(connection.requests.begin(), connection.requests.end(), [&fs, &totalTime, &totalTimeOfConnection](request record){
+            fs << "Transaction Record - SendTime: " << record.sendTime << " microsec ReceiveTime: "
             << record.recieveTime << " microsec Delta: " << record.deltaTime << " microsc" << endl;
 
-        totalTime += record.deltaTime;
+            totalTime += record.deltaTime;
+            totalTimeOfConnection += record.deltaTime;
+
+        });
+
+        fs << " -- Average RTT for This Connection: " << totalTimeOfConnection/connection.requests.size() << " -- " << endl;
+
     });
 
-    fs << "Total Data Transfered: " << transactions.totalDataSent << " bytes" << endl;
 
-    double numOfRequests = transactions.requests.size();
-    double averageTime = totalTime/numOfRequests;
-
-    fs << "Average RTT: " << averageTime << endl;
+    fs << "Total Data Transfered By Application: " << totalData << " bytes" << endl;
 
     fs.close();
+
+    cout << "Closing All Client Connections" << endl;
+
+    for(unsigned int i =0 ; i < connections; i++){
+        shutdown(descriptors[i], SHUT_RDWR);
+        close(descriptors[i]);
+    }
+
+    cout << "Completed Closing All Clients. Now Self Terminating" << endl;
+
+    exit(0);
 
 }
 /**
@@ -138,9 +168,23 @@ void shutdownClient(int signo){
  */
 int main(int argc, char * argv[]) {
 
+    /**
+     * PARAMETERS
+     * -s <message> - Set the Message To Be Sent
+     * -r 1|0 - Pass 1 or 0. 1 Means to send random character strings of up to 25 characters
+     * -h <host> - Set the host to connect to
+     * -p <port> - Set the port to connect to the host on
+     * -c <number> - Set number of connections this client will make
+     */
+
     ArgParcer parcer;
     string messageToSend = parcer.GetTagData("-s",argv, argc);
     int randomStrings = parcer.GetTagVal("-r", argv, argc);
+    string host = parcer.GetTagData("-h", argv, argc);
+    int port = parcer.GetTagVal("-p", argv, argc);
+    connections = parcer.GetTagVal("-c", argv, argc);
+
+    int messageToSendLength = 0;
     bool sendRandom = false;
 
     if(messageToSend.compare("-1")==0){
@@ -151,6 +195,13 @@ int main(int argc, char * argv[]) {
         sendRandom = true;
     }
 
+    if(host.compare("-1")==0 || port == -1 || connections == -1){
+        cout << "ERROR. Missing Parameters. Exepcted Use:" << endl;
+        cout << "client -h <host> -p <port> -c <connections> [-s <message>][-r 1|0]" << endl;
+        return 1;
+    }
+
+    cout << "Set Message To Send: " << messageToSend << endl;
 
     //register sig terminate
     struct sigaction act;
@@ -162,23 +213,7 @@ int main(int argc, char * argv[]) {
         exit(1);
     }
 
-    //create socket
-    int socketDescriptor;
-    if ((socketDescriptor = socket(AF_INET, SOCK_STREAM, 0)) == -1)
-    {
-        perror ("Can't create a socket");
-        exit(1);
-    }else{
-        cout << "Main - Socket Created" << endl;
-    }
-
-    //connect to server
-    connectToServer("localhost", 4002, socketDescriptor);
-
-    struct epoll_event events [EPOLL_QUEUE_LENGTH];
-    struct epoll_event event; //holder for all new events
-
-
+    //create epoll listener
     int epollDescriptor;
     if((epollDescriptor = epoll_create(EPOLL_QUEUE_LENGTH)) < 0){
         cout << getpid() << " Failed To Create epoll Descriptor" << endl;
@@ -187,19 +222,32 @@ int main(int argc, char * argv[]) {
         cout << getpid() << " Successfully Created epoll Descriptor" << endl;
     }
 
-    //add server socket to the epoll event loop
-    event.events = EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLET;
-    event.data.fd = socketDescriptor;
-    if(epoll_ctl(epollDescriptor, EPOLL_CTL_ADD, socketDescriptor, &event) == -1){
-        cout << getpid() << " Failed To Add Socket Descriptor To The Epoll Event Loop" << endl;
-        exit(1);
-    }else{
-        cout << getpid() << " - Successfully Added Socket Descriptor To The Epoll Event Loop" << endl;
-    }
 
 
-    //while 1
-    while(continueRunning){
+
+    descriptors = new int[connections];
+
+
+    //create as many sockets as connections, establish thier conneciton and register them with the epoll listener
+    for(unsigned int i = 0; i < connections ; i++){
+
+        //create socket
+        int socketDescriptor;
+        if ((socketDescriptor = socket(AF_INET, SOCK_STREAM, 0)) == -1)
+        {
+            perror ("Can't create a socket");
+            exit(1);
+        }else{
+            cout << "Main - Socket Created" << endl;
+        }
+
+        cout << "Main - Created Socket Descriptor: " << socketDescriptor << endl;
+        descriptors[i] = socketDescriptor;
+
+        //connect to server
+        connectToServer(host, port, socketDescriptor);
+
+
 
         string message;
 
@@ -212,25 +260,53 @@ int main(int argc, char * argv[]) {
             message = "{" + messageToSend + "}";
         }
 
+        //send
         struct timeval initiationTime;
         gettimeofday(&initiationTime,NULL);
 
+        connection transaction;
+        transaction.descriptor = descriptors[i];
+
         request record;
         record.sendTime = initiationTime.tv_usec;
-        transactions.totalDataSent += sizeof(message.c_str());
+        transaction.totalDataSent += sizeof(message.c_str());
+
+        transaction.requests.push_back(record);
+        connectionsVector.push_back(transaction);
 
         //send message
-        int length = message.size();
-        send (socketDescriptor, message.c_str(), length, 0);
-        cout << "Main - Sent Message" << endl;
+        messageToSendLength = message.size();
+        send (descriptors[i], message.c_str(), messageToSendLength, 0);
+        cout << "Main - Sent Initial Message Of: >" << message << "< Over Socket Descriptor: " << to_string(descriptors[i]) << endl;
+
+        struct epoll_event event; //holder for all new events
+
+        //add server socket to the epoll event loop
+        event.events = EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLET;
+        event.data.fd = socketDescriptor;
+        if(epoll_ctl(epollDescriptor, EPOLL_CTL_ADD, socketDescriptor, &event) == -1){
+            cout << getpid() << " Failed To Add Socket Descriptor (" << to_string(socketDescriptor) << ") To The Epoll ("
+            << to_string(epollDescriptor) << ") Event Loop" << endl;
+            exit(1);
+        }else{
+            cout << getpid() << " - Successfully Added Socket Descriptor (" << to_string(socketDescriptor)
+            << ") To The Epoll (" << to_string(epollDescriptor) << ") Event Loop" << endl;
+        }
+    }
+
+    struct epoll_event events [EPOLL_QUEUE_LENGTH];
+
+    //while 1
+    while(continueRunning){
 
 
         //wait for reply
-
         int num_fds = epoll_wait(epollDescriptor, events, EPOLL_QUEUE_LENGTH, -1);
         if (num_fds < 0) {
             cout << getpid() << " - There Was An Error In Epoll Wait" << endl;
             exit(1);
+        }else{
+            cout << "Number of FD: " << num_fds << endl;
         }
 
         //sift through reply
@@ -238,7 +314,8 @@ int main(int argc, char * argv[]) {
             if (events[i].events & (EPOLLHUP | EPOLLERR)) {
                 cout << getpid() << " There Was An Error In An Event From Epoll. Closing File Descriptor" << endl;
                 close(events[i].data.fd);
-                exit(1);
+                continue;
+                //exit(1);
             }
 
             if (!(events[i].events & EPOLLIN)) {
@@ -250,34 +327,51 @@ int main(int argc, char * argv[]) {
                 exit(1);
             }
 
-            char recvBuffer[length];
-            long bytesReceived = recv(events[i].data.fd, recvBuffer, length+1, 0);
-            cout << "Main - Got Message Back!" << endl;
-            cout << recvBuffer << endl;
+
+            int eventFd = events[i].data.fd;
+
+            char recvBuffer[messageToSendLength];
+            //cout << "Before Read: " << recvBuffer << endl;
+            long bytesReceived = read(eventFd, recvBuffer, messageToSendLength); //recv(events[i].data.fd, recvBuffer, messageToSendLength, 0);
+            //cout << "Bytes Received: " << bytesReceived << endl;
+            cout << "Main - Got Message Back On SocketDescriptor: " << eventFd << endl;
+            cout << "Message: >" << recvBuffer << "<" << endl;
 
             struct timeval recieveTime;
             gettimeofday(&recieveTime,NULL);
 
 
             //write down record information about reply
-            record.recieveTime = recieveTime.tv_usec;
-            record.deltaTime = record.recieveTime - record.sendTime;
+            for(size_t j = 0; j < connectionsVector.size(); j++){
 
-            transactions.requests.push_back(record);
+                if(connectionsVector[j].descriptor == eventFd){
+                    cout << "Found Matching Record: Descriptor-" << connectionsVector[j].descriptor << " fd-" << eventFd << endl;
+                    connectionsVector[j].requests.back().recieveTime = recieveTime.tv_usec;
+                    connectionsVector[j].requests.back().deltaTime = (recieveTime.tv_usec - connectionsVector[j].requests.back().sendTime);
 
+                    //send
+                    struct timeval initiationTime;
+                    gettimeofday(&initiationTime,NULL);
 
+                    request record;
+                    record.sendTime = initiationTime.tv_usec;
 
+                    connectionsVector[j].totalDataSent += sizeof(recvBuffer);
+                    connectionsVector[j].requests.push_back(record);
 
+                    string reSendMessage(recvBuffer);
+
+                    //send it back again
+                    send(eventFd, reSendMessage.c_str(), reSendMessage.length(), 0);
+
+                    break;
+                }else{
+                    //cout << "No match for: Descriptor-" << connectionsVector[j].descriptor << " fd-" << events[i].data.fd << endl;
+                }
+            }
         }
 
-
-
-
-
     }
-
-    close(socketDescriptor);
-
 
     return 0;
 }

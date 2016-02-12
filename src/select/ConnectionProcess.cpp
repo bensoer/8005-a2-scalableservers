@@ -207,7 +207,7 @@ void ConnectionProcess::start() {
 
             //if this socket descriptor is set in the read descriptors set
             if(FD_ISSET(this->clients[i], &rset)){
-
+                //cout << "IS SET" << endl;
                 //read its content
                 string * message = this->readInMessage(this->clients[i]);
 

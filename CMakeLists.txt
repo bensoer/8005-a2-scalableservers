@@ -7,8 +7,10 @@ set(E_SOURCE_FILES src/epoll/main.cpp src/epoll/ConnectionProcess.h src/epoll/Co
 set(S_SOURCE_FILES src/select/main.cpp src/select/ConnectionProcess.cpp src/select/ConnectionProcess.h)
 set(T_SOURCE_FILES src/traditional/main.cpp src/traditional/ConnectionProcess.cpp src/traditional/ConnectionProcess.h)
 set(C_SOURCE_FILES src/client/main.cpp)
+set(C2_SOURCE_FILES src/client2/main.cpp)
 
 add_executable(epoll ${E_SOURCE_FILES})
 add_executable(traditional ${T_SOURCE_FILES})
 add_executable(select ${S_SOURCE_FILES})
 add_executable(client ${C_SOURCE_FILES})
+add_executable(client2 ${C2_SOURCE_FILES})
