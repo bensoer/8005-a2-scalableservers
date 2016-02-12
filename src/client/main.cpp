@@ -109,33 +109,43 @@ void shutdownClient(int signo){
 
     cout << " ..  Writing Client Records To File .. This May Take A Second .." << endl;
 
-    double totalTime = 0;
-    double totalData = 0;
+    long double totalTime = 0;
+    long double totalData = 0;
 
     std::fstream fs;
     fs.open ("./client-syslog.log", std::fstream::in | std::fstream::out | std::fstream::app);
 
+    cout << "Connections Vector length:"  << connectionsVector.size() << endl;
+
     int index = 0;
     for_each(connectionsVector.begin(), connectionsVector.end(), [&fs, &totalTime, &totalData, &index](connection connection){
 
-        int totalTimeOfConnection = 0;
+
 
         fs << " -- Connection " << index << " Made Over Socket Descriptor: " << connection.descriptor << " -- " << endl;
         fs << " -- Total Data Sent Over This Connection: " << connection.totalDataSent << " bytes -- " << endl;
         index++;
 
         totalData += connection.totalDataSent;
+        long long totalTimeOfConnection = 0;
 
+        cout << "about to filter requests at index: " << index << endl;
         for_each(connection.requests.begin(), connection.requests.end(), [&fs, &totalTime, &totalTimeOfConnection](request record){
             fs << "Transaction Record - SendTime: " << record.sendTime << " microsec ReceiveTime: "
             << record.recieveTime << " microsec Delta: " << record.deltaTime << " microsc" << endl;
 
-            totalTime += record.deltaTime;
-            totalTimeOfConnection += record.deltaTime;
+            //totalTime += record.deltaTime;
+            totalTimeOfConnection = totalTimeOfConnection + record.deltaTime;
 
         });
 
-        fs << " -- Average RTT for This Connection: " << totalTimeOfConnection/connection.requests.size() << " -- " << endl;
+        long double size = connection.requests.size();
+
+        cout << "total delta Time for Connections: " << totalTimeOfConnection << endl;
+        cout << "total size of requests for connections: " << size  << endl;
+        cout << "Average microseconds : " << (totalTimeOfConnection/size) << endl;
+
+        fs << " -- Average RTT for This Connection: " << (totalTimeOfConnection/size) << "microsec -- " << endl;
 
     });
 
@@ -265,7 +275,7 @@ int main(int argc, char * argv[]) {
         gettimeofday(&initiationTime,NULL);
 
         connection transaction;
-        transaction.descriptor = descriptors[i];
+        transaction.descriptor = socketDescriptor;
 
         request record;
         record.sendTime = initiationTime.tv_usec;

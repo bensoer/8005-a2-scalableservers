@@ -116,6 +116,18 @@ string readInPipeMessage(int * pipeToParent){
         }
     }
 }
+
+int getActiveConnectionsCount(){
+    int totalActive = 0;
+    for_each(clientData.begin(), clientData.end(), [&totalActive](usage record){
+
+        if(record.active){
+            totalActive++;
+        }
+    });
+
+    return totalActive;
+}
 /**
  * shutdownServer is a helper method that handles the shutdown of ther server. This method is triggered when Ctrl+C is
  * pressed. As this is the only way to shutdown the server, this method ensures all portions of the server are cleaned
@@ -267,8 +279,8 @@ int main() {
 
 
             //check if we have used half the processes
-            //if the number of idleProcesses is less then half of the current connections. we need more
-            if(idleProcesses < (children.size()/2) ){
+            //if the number of preBuild process is less then active connections + 3 buffer. we need more
+            if(processCount < getActiveConnectionsCount() + 3 ){
                 cout << "Main - Process Count Is Too Low. Adding More Processes" << endl;
                 //if half used create 10 more processes - pass ConnectionProcess the socket
                 createChildProcesses(socketDescriptor, pipeConnectionToParent, &children, INCR_NUM_OF_PROCESSES);
